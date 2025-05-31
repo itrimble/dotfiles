@@ -55,21 +55,6 @@ link_dotfile() {
     fi
 }
 
-# Check if running on macOS
-if [[ "$OSTYPE" != "darwin"* ]]; then
-    log_error "This script is designed for macOS only!"
-    exit 1
-fi
-
-# Check for Apple Silicon
-if [[ $(uname -m) == "arm64" ]]; then
-    log_success "Apple Silicon detected - using ARM64 optimizations"
-    HOMEBREW_PREFIX="/opt/homebrew"
-else
-    log_info "Intel Mac detected - using x86_64 optimizations"
-    HOMEBREW_PREFIX="/usr/local"
-fi
-
 # Install Homebrew if not present
 log_header "📦 Installing Homebrew"
 if ! command -v brew &> /dev/null; then
@@ -184,6 +169,10 @@ log_info "Next steps:"
 log_info "1. Restart your terminal or run: source ~/.zshrc"
 log_info "2. Configure p10k theme: p10k configure"
 log_info "3. Enjoy your optimized setup!"
+log_info ""
+log_info "🤖 Optional: Setup Weekly Automation"
+log_info "   cd ~/.dotfiles/scripts && ./setup-automation.sh"
+log_info "   This will automatically update packages weekly and sync to GitHub"
 log_info ""
 log_info "Test your setup with:"
 log_info "  l          # Beautiful file listing"
