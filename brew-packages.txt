@@ -1,0 +1,28 @@
+# Homebrew packages for ITrimble's dotfiles
+# Install with: brew install $(cat brew-packages.txt)
+
+# Modern CLI tools
+eza
+bat
+fd
+ripgrep
+fzf
+tree
+lazygit
+tmux
+thefuck
+tldr
+neofetch
+
+# Development essentials
+git
+gh
+jq
+curl
+wget
+htop
+node
+python@3.12
+
+# Optional productivity tools
+autojump
