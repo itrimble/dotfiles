@@ -41,6 +41,12 @@ A complete, automated setup for a modern macOS development environment featuring
 git clone https://github.com/itrimble/dotfiles.git ~/.dotfiles && cd ~/.dotfiles && ./install.sh
 ```
 
+### **Optional: Weekly Automation**
+```bash
+# After installation, enable automatic weekly updates
+cd ~/.dotfiles/scripts && ./setup-automation.sh
+```
+
 ### **Step-by-Step**
 ```bash
 # Clone the repository

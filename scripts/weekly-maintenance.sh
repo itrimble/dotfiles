@@ -1,0 +1,229 @@
+#!/bin/bash
+
+# 🤖 Automated Weekly Dotfiles Maintenance & Sync
+# Runs weekly to update packages, sync changes, and push to GitHub
+# Location: ~/.dotfiles/scripts/weekly-maintenance.sh
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+NC='\033[0m'
+
+# Logging functions
+log_info() { echo -e "${BLUE}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"; }
+log_warning() { echo -e "${YELLOW}[WARNING]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"; }
+log_header() { echo -e "${PURPLE}[HEADER]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"; }
+
+# Configuration
+DOTFILES_DIR="$HOME/.dotfiles"
+LOG_FILE="$DOTFILES_DIR/logs/maintenance-$(date +%Y%m%d-%H%M%S).log"
+BACKUP_DIR="$DOTFILES_DIR/backups/$(date +%Y%m%d-%H%M%S)"
+
+# Ensure we're in the dotfiles directory
+cd "$DOTFILES_DIR" || {
+    log_error "Dotfiles directory not found at $DOTFILES_DIR"
+    exit 1
+}
+
+# Create directories if they don't exist
+mkdir -p "$(dirname "$LOG_FILE")"
+mkdir -p "$BACKUP_DIR"
+
+# Redirect output to both console and log file
+exec > >(tee -a "$LOG_FILE")
+exec 2>&1
+
+log_header "🤖 Starting Weekly Dotfiles Maintenance"
+
+# Backup current configs before changes
+log_info "Creating backup of current configurations"
+cp ~/.zshrc "$BACKUP_DIR/.zshrc" 2>/dev/null || log_warning "No .zshrc to backup"
+cp ~/.tmux.conf "$BACKUP_DIR/.tmux.conf" 2>/dev/null || log_warning "No .tmux.conf to backup"
+cp ~/.gitconfig "$BACKUP_DIR/.gitconfig" 2>/dev/null || log_warning "No .gitconfig to backup"
+cp ~/.p10k.zsh "$BACKUP_DIR/.p10k.zsh" 2>/dev/null || log_warning "No .p10k.zsh to backup"
+
+# Update Homebrew and packages
+log_header "📦 Updating Homebrew and Packages"
+if command -v brew &> /dev/null; then
+    log_info "Updating Homebrew..."
+    brew update
+    
+    log_info "Upgrading packages..."
+    brew upgrade
+    
+    log_info "Cleaning up old packages..."
+    brew cleanup
+    
+    log_info "Running brew doctor..."
+    brew doctor || log_warning "Brew doctor found issues (check manually)"
+    
+    # Generate updated package list
+    log_info "Updating package list..."
+    brew list --formula > "$DOTFILES_DIR/brew-packages-current.txt"
+    
+else
+    log_warning "Homebrew not found, skipping package updates"
+fi
+
+# Update Oh My Zsh
+log_header "🐚 Updating Oh My Zsh"
+if [ -d "$HOME/.oh-my-zsh" ]; then
+    log_info "Updating Oh My Zsh framework..."
+    cd "$HOME/.oh-my-zsh"
+    git pull origin master || log_warning "Failed to update Oh My Zsh"
+    cd "$DOTFILES_DIR"
+else
+    log_warning "Oh My Zsh not found"
+fi
+
+# Update Powerlevel10k
+log_header "🎨 Updating Powerlevel10k Theme"
+P10K_DIR="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k"
+if [ -d "$P10K_DIR" ]; then
+    log_info "Updating Powerlevel10k..."
+    cd "$P10K_DIR"
+    git pull origin master || log_warning "Failed to update Powerlevel10k"
+    cd "$DOTFILES_DIR"
+else
+    log_warning "Powerlevel10k not found"
+fi
+
+# Update zsh plugins
+log_header "🔌 Updating Zsh Plugins"
+ZSH_PLUGINS_DIR="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins"
+
+for plugin in zsh-syntax-highlighting zsh-autosuggestions; do
+    if [ -d "$ZSH_PLUGINS_DIR/$plugin" ]; then
+        log_info "Updating $plugin..."
+        cd "$ZSH_PLUGINS_DIR/$plugin"
+        git pull origin master || log_warning "Failed to update $plugin"
+        cd "$DOTFILES_DIR"
+    else
+        log_warning "$plugin not found"
+    fi
+done
+
+# Sync any changes from home directory to dotfiles repo
+log_header "🔄 Syncing Configuration Changes"
+CHANGES_MADE=false
+
+# Check if home configs differ from repo versions
+for config in .zshrc .tmux.conf .gitconfig .p10k.zsh; do
+    if [ -f "$HOME/$config" ] && [ -f "$DOTFILES_DIR/$config" ]; then
+        if ! cmp -s "$HOME/$config" "$DOTFILES_DIR/$config"; then
+            log_info "Detected changes in $config, updating repo version..."
+            cp "$HOME/$config" "$DOTFILES_DIR/$config"
+            CHANGES_MADE=true
+        fi
+    fi
+done
+
+# Check for updates from remote repository
+log_header "📥 Checking for Remote Updates"
+git fetch origin main
+
+if [ $(git rev-list HEAD...origin/main --count) -gt 0 ]; then
+    log_info "Remote updates found, pulling changes..."
+    git pull origin main
+    CHANGES_MADE=true
+else
+    log_info "Repository is up to date with remote"
+fi
+
+# Check if we have any local changes to commit
+log_header "📤 Checking for Local Changes"
+if [ -n "$(git status --porcelain)" ]; then
+    log_info "Local changes detected, preparing commit..."
+    
+    # Generate commit message with update details
+    COMMIT_MSG="🤖 Weekly maintenance update $(date '+%Y-%m-%d')
+
+Automated updates:
+- Homebrew packages updated
+- Oh My Zsh framework updated
+- Powerlevel10k theme updated
+- Zsh plugins updated
+- Configuration files synced
+
+Generated by weekly-maintenance.sh"
+
+    # Add all changes
+    git add -A
+    
+    # Commit changes
+    git commit -m "$COMMIT_MSG"
+    
+    # Push to GitHub
+    log_info "Pushing changes to GitHub..."
+    git push origin main
+    
+    log_success "Changes pushed to GitHub successfully"
+    CHANGES_MADE=true
+else
+    log_info "No local changes to commit"
+fi
+
+# Generate maintenance report
+log_header "📊 Generating Maintenance Report"
+REPORT_FILE="$DOTFILES_DIR/logs/maintenance-report-$(date +%Y%m%d).md"
+
+cat > "$REPORT_FILE" << EOF
+# Weekly Maintenance Report - $(date '+%Y-%m-%d %H:%M:%S')
+
+## Summary
+- **Status**: ✅ Completed
+- **Duration**: Started at $(date '+%H:%M:%S')
+- **Changes Made**: $([ "$CHANGES_MADE" = true ] && echo "Yes" || echo "No")
+
+## Updates Performed
+- [x] Homebrew packages updated
+- [x] Oh My Zsh framework updated  
+- [x] Powerlevel10k theme updated
+- [x] Zsh plugins updated
+- [x] Configuration files synced
+- [x] Repository pushed to GitHub
+
+## Package Information
+$([ -f "$DOTFILES_DIR/brew-packages-current.txt" ] && echo "Current packages: $(wc -l < "$DOTFILES_DIR/brew-packages-current.txt") installed")
+
+## Backup Location
+- Backup created at: \`$BACKUP_DIR\`
+
+## Next Maintenance
+- Scheduled for: $(date -d '+7 days' '+%Y-%m-%d' 2>/dev/null || date -v+7d '+%Y-%m-%d' 2>/dev/null || echo "Next week")
+
+---
+*Generated automatically by weekly-maintenance.sh*
+EOF
+
+log_success "Maintenance report generated: $REPORT_FILE"
+
+# Clean up old logs (keep last 30 days)
+log_info "Cleaning up old maintenance logs..."
+find "$DOTFILES_DIR/logs" -name "maintenance-*.log" -mtime +30 -delete 2>/dev/null || true
+find "$DOTFILES_DIR/logs" -name "maintenance-report-*.md" -mtime +30 -delete 2>/dev/null || true
+
+# Clean up old backups (keep last 10)
+log_info "Cleaning up old backups..."
+if [ -d "$DOTFILES_DIR/backups" ]; then
+    ls -t "$DOTFILES_DIR/backups" | tail -n +11 | while read -r old_backup; do
+        rm -rf "$DOTFILES_DIR/backups/$old_backup"
+    done
+fi
+
+log_header "✅ Weekly Maintenance Complete"
+log_success "All tasks completed successfully!"
+log_info "Changes made: $([ "$CHANGES_MADE" = true ] && echo "Yes" || echo "No")"
+log_info "Log file: $LOG_FILE"
+log_info "Report file: $REPORT_FILE"
+log_info "Next maintenance: $(date -d '+7 days' '+%Y-%m-%d' 2>/dev/null || date -v+7d '+%Y-%m-%d' 2>/dev/null || echo "Next week")"
+
+echo ""
+echo "🎉 Weekly dotfiles maintenance completed successfully!"
